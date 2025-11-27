@@ -1,7 +1,8 @@
 # GdriveFolderCopy
 Automated Google Drive folder replication tool with recursive copy support, progress persistence, detailed logging, duplicate avoidance, and trigger-based resume for large directory trees.
 
-Google Drive Folder Copy Manager (GDFCM)
+Google Drive Folder Copy Manager (GDFCM) &nbsp;   <br>
+![GitHub all releases](https://img.shields.io/github/downloads/TechPoov/GDriveCrawlerToGSheet/total.svg)
 
 Efficient, resumable, and structured recursive folder copying inside Google Drive.
 Designed and developed by TechPoov.
