@@ -3,7 +3,7 @@ Automated Google Drive folder replication tool with recursive copy support, prog
 
 Google Drive Folder Copy Manager (GDFCM) &nbsp; 
 [Download Link](https://github.com/TechPoov/GdriveFolderCopy/releases/tag/V1.0)
-
+&nbsp; 
 <br>
 ![GitHub all releases](https://img.shields.io/github/downloads/TechPoov/GdriveFolderCopy/total.svg)
 
