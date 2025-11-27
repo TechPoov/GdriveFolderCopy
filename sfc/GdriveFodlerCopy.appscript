@@ -1,0 +1,537 @@
+/*******************************************************
+ * Google Drive Folder Copy Manager
+ * Version: 1.0
+ * Author: techpoov+GdriveFolderCopy@gmail.com
+ *
+ * Main Features:
+ * - Reads copy jobs from Profile sheet
+ * - Copies folders recursively with duplicate avoidance
+ * - Logs each row job into Log sheet
+ * - Sends email on Completed/Error per row
+ *******************************************************/
+
+/************** CONFIGURATION CONSTANTS **************/
+const GDFCM_CONFIG = {
+  PROFILE_SHEET_NAME: 'Profile',
+  LOG_SHEET_NAME: 'Log',
+  STATE_PROPERTY_KEY: 'GDFCM_STATE',
+  TRIGGER_FUNCTION_NAME: 'resumeCopyJob',
+  MAX_RUN_MS: 6 * 60 * 1000,      // 6 minutes per requirement
+  SAFE_MARGIN_MS: 60 * 1000,      
+  STATE_VERSION: 1
+};
+
+/********************* MENU ***************************/
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Copy Gdrives')
+    .addItem('Start Copy', 'startCopyMenu')
+    .addItem('View Logs', 'viewLogsMenu')
+    .addToUi();
+}
+
+/**
+ * Menu item: Start Copy
+ * - Starts a new copy run (or resumes if state already exists).
+ */
+function startCopyMenu() {
+  runController(true);
+}
+
+/**
+ * Menu item: View Logs
+ * - Activates / creates Log sheet.
+ */
+function viewLogsMenu() {
+  const ss = SpreadsheetApp.getActive();
+  let sheet = ss.getSheetByName(GDFCM_CONFIG.LOG_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(GDFCM_CONFIG.LOG_SHEET_NAME);
+  }
+  ss.setActiveSheet(sheet);
+}
+
+/********************* TRIGGER ENTRY *******************/
+/**
+ * Trigger entry point: resumeCopyJob
+ * - Called by time-based triggers to continue work.
+ */
+function resumeCopyJob() {
+  runController(false);
+}
+
+/********************* CORE CONTROLLER *****************/
+/**
+ * Central orchestrator.
+ * @param {boolean} fromMenu - true if invoked from menu, false if from trigger.
+ */
+function runController(fromMenu) {
+  const startTime = Date.now();
+  const ss = SpreadsheetApp.getActive();
+  const profileSheet = ss.getSheetByName(GDFCM_CONFIG.PROFILE_SHEET_NAME);
+  if (!profileSheet) {
+    SpreadsheetApp.getUi().alert('Profile sheet not found: ' + GDFCM_CONFIG.PROFILE_SHEET_NAME);
+    return;
+  }
+
+  const scriptProps = PropertiesService.getScriptProperties();
+  let state = loadState(scriptProps);
+
+  // If no active state, initialize fresh
+  if (!state || !state.active) {
+    state = initializeNewState(profileSheet);
+    if (!state) {
+      // nothing to do (no rows)
+      clearStateAndTriggers(scriptProps);
+      return;
+    }
+  }
+
+  // Main loop: process as much as possible within time slice
+  while (Date.now() - startTime < GDFCM_CONFIG.MAX_RUN_MS - GDFCM_CONFIG.SAFE_MARGIN_MS) {
+    // Ensure we have a rowState
+    if (!state.rowState) {
+      const rowState = pickNextRowState(profileSheet, state);
+      if (!rowState) {
+        // No more eligible rows -> done
+        clearStateAndTriggers(scriptProps);
+        return;
+      }
+      state.rowState = rowState;
+    }
+
+    // Process current rowState
+    const rowDone = processRowState(profileSheet, state, startTime);
+
+    if (rowDone) {
+      // finalize row: set Completed/Error, log, email
+      finalizeRow(profileSheet, state);
+      state.rowState = null; // move to next row on next loop
+    }
+
+    // Check if any time left; if no rowState and no more rows, exit as done
+    if (!state.rowState && state.currentRow > state.lastRow) {
+      clearStateAndTriggers(scriptProps);
+      return;
+    }
+
+    // If time almost over, break to save checkpoint and set trigger
+    if (Date.now() - startTime >= GDFCM_CONFIG.MAX_RUN_MS - GDFCM_CONFIG.SAFE_MARGIN_MS) {
+      break;
+    }
+  }
+
+  // If we reached here and still have work, save state and schedule trigger
+  state.active = true;
+  saveState(scriptProps, state);
+  scheduleResumeTrigger();
+}
+
+/********************* STATE HELPERS *******************/
+/**
+ * Load persisted state from Script Properties.
+ */
+function loadState(scriptProps) {
+  const raw = scriptProps.getProperty(GDFCM_CONFIG.STATE_PROPERTY_KEY);
+  if (!raw) return null;
+  try {
+    const state = JSON.parse(raw);
+    if (state && state.version === GDFCM_CONFIG.STATE_VERSION) {
+      return state;
+    }
+    return null;
+  } catch (e) {
+    Logger.log('Failed to parse state, resetting. ' + e);
+    return null;
+  }
+}
+
+/**
+ * Save state to Script Properties.
+ */
+function saveState(scriptProps, state) {
+  state.version = GDFCM_CONFIG.STATE_VERSION;
+  scriptProps.setProperty(GDFCM_CONFIG.STATE_PROPERTY_KEY, JSON.stringify(state));
+}
+
+/**
+ * Initialize a brand new state.
+ */
+function initializeNewState(profileSheet) {
+  const lastRow = profileSheet.getLastRow();
+  if (lastRow < 2) {
+    // No data rows
+    return null;
+  }
+  return {
+    active: true,
+    version: GDFCM_CONFIG.STATE_VERSION,
+    currentRow: 2,
+    lastRow: lastRow,
+    rowState: null
+  };
+}
+
+/**
+ * Find the next eligible row and build initial rowState.
+ * Eligible row: Copy = "Yes" and Status != "Completed".
+ */
+function pickNextRowState(profileSheet, state) {
+  const lastRow = state.lastRow;
+  let row = state.currentRow;
+
+  while (row <= lastRow) {
+    const copyFlag = profileSheet.getRange(row, 6).getValue(); // F: Copy
+    const status = profileSheet.getRange(row, 7).getValue();   // G: Status
+
+    if (copyFlag === 'Yes' && status !== 'Completed') {
+      // Build rowState or mark Error if invalid
+      try {
+        const rowState = initializeRowState(profileSheet, row);
+        state.currentRow = row; // ensure currentRow points here
+        return rowState;
+      } catch (e) {
+        // Initialization failed -> mark Error and log, then move on
+        handleRowInitializationError(profileSheet, row, e);
+        row++;
+        state.currentRow = row;
+        continue;
+      }
+    }
+    row++;
+    state.currentRow = row;
+  }
+  // No more eligible rows
+  return null;
+}
+
+/**
+ * Initialize rowState for a specific row.
+ * May throw if configuration invalid.
+ */
+function initializeRowState(profileSheet, row) {
+  const sourceName = profileSheet.getRange(row, 1).getValue(); // A
+  const sourceId = profileSheet.getRange(row, 2).getValue();   // B
+  const destName = profileSheet.getRange(row, 3).getValue();   // C
+  const destId = profileSheet.getRange(row, 4).getValue();     // D
+  const copiedName = profileSheet.getRange(row, 5).getValue(); // E
+
+  if (!sourceId || !destId) {
+    throw new Error('Source_Folder_ID or Dest_Folder_ID is empty.');
+  }
+  if (!copiedName) {
+    throw new Error('Copied_Folder_Name is empty.');
+  }
+
+  let sourceFolder, destFolder;
+  try {
+    sourceFolder = DriveApp.getFolderById(String(sourceId));
+  } catch (e) {
+    throw new Error('Invalid Source_Folder_ID: ' + sourceId);
+  }
+  try {
+    destFolder = DriveApp.getFolderById(String(destId));
+  } catch (e) {
+    throw new Error('Invalid Dest_Folder_ID: ' + destId);
+  }
+
+  // Find or create root copied folder under destination
+  const existing = destFolder.getFoldersByName(String(copiedName));
+  let rootCopyFolder;
+  if (existing.hasNext()) {
+    rootCopyFolder = existing.next();
+  } else {
+    rootCopyFolder = destFolder.createFolder(String(copiedName));
+  }
+
+  const now = new Date();
+  profileSheet.getRange(row, 7).setValue('Running');         // Status
+  profileSheet.getRange(row, 8).setValue(now);               // LastUpdatedOn
+
+  const rowState = {
+    rowNumber: row,
+    sourceFolderId: String(sourceFolder.getId()),
+    destFolderId: String(destFolder.getId()),
+    copiedFolderName: String(copiedName),
+    rootCopyFolderId: String(rootCopyFolder.getId()),
+    executionId: Utilities.getUuid(),
+    startTimeIso: now.toISOString(),
+    foldersCopied: 1,      // root folder
+    filesCopied: 0,
+    folderQueue: [
+      {
+        srcId: String(sourceFolder.getId()),
+        destId: String(rootCopyFolder.getId())
+      }
+    ],
+    // Keeping names for better logging
+    sourceName: String(sourceName),
+    destName: String(destName)
+  };
+
+  return rowState;
+}
+
+/**
+ * Handle errors during row initialization (invalid config).
+ */
+function handleRowInitializationError(profileSheet, row, error) {
+  const now = new Date();
+  profileSheet.getRange(row, 7).setValue('Error');       // Status
+  profileSheet.getRange(row, 8).setValue(now);           // LastUpdatedOn
+  appendLog(profileSheet, row, {
+    status: 'Error',
+    sourceName: profileSheet.getRange(row, 1).getValue(),
+    startTimeIso: now.toISOString(),
+    foldersCopied: 0,
+    filesCopied: 0,
+    executionId: Utilities.getUuid(),
+    errorMessage: 'Initialization error: ' + error.message
+  });
+  sendNotificationEmail({
+    rowNumber: row,
+    sourceName: profileSheet.getRange(row, 1).getValue(),
+    sourceId: profileSheet.getRange(row, 2).getValue(),
+    destName: profileSheet.getRange(row, 3).getValue(),
+    destId: profileSheet.getRange(row, 4).getValue(),
+    copiedFolderName: profileSheet.getRange(row, 5).getValue(),
+    status: 'Error',
+    foldersCopied: 0,
+    filesCopied: 0,
+    executionId: Utilities.getUuid(),
+    errorMessage: 'Initialization error: ' + error.message
+  });
+}
+
+/********************* ROW PROCESSING *****************/
+/**
+ * Process rowState: copies folders until time is nearly out or queue is empty.
+ * @returns {boolean} rowDone - true if this row is fully processed.
+ */
+function processRowState(profileSheet, state, startTime) {
+  const rowState = state.rowState;
+  const queue = rowState.folderQueue;
+
+  while (queue.length > 0) {
+    if (Date.now() - startTime >= GDFCM_CONFIG.MAX_RUN_MS - GDFCM_CONFIG.SAFE_MARGIN_MS) {
+      // Save partial progress for next trigger
+      return false;
+    }
+
+    const item = queue.shift();
+    try {
+      const srcFolder = DriveApp.getFolderById(item.srcId);
+      const destFolder = DriveApp.getFolderById(item.destId);
+
+      // Copy all files
+      const files = srcFolder.getFiles();
+      while (files.hasNext()) {
+        const file = files.next();
+        const name = file.getName();
+
+        // Avoid duplicates by name
+        const existingFiles = destFolder.getFilesByName(name);
+        if (existingFiles.hasNext()) {
+          continue;
+        }
+        file.makeCopy(name, destFolder);
+        rowState.filesCopied++;
+      }
+
+      // Copy subfolders
+      const subFolders = srcFolder.getFolders();
+      while (subFolders.hasNext()) {
+        const subFolder = subFolders.next();
+        const subName = subFolder.getName();
+
+        let destSubFolder;
+        const existingSub = destFolder.getFoldersByName(subName);
+        if (existingSub.hasNext()) {
+          destSubFolder = existingSub.next();
+        } else {
+          destSubFolder = destFolder.createFolder(subName);
+          rowState.foldersCopied++;
+        }
+
+        // Add to queue for next processing
+        queue.push({
+          srcId: subFolder.getId(),
+          destId: destSubFolder.getId()
+        });
+      }
+
+    } catch (e) {
+      // Folder-level error -> mark row as Error, but allow other rows later
+      rowState.errorMessage = 'Error copying folder: ' + e.message;
+      return true; // row is considered done (Error)
+    }
+  }
+
+  // Queue empty => row finished successfully (unless errorMessage set)
+  return true;
+}
+
+/**
+ * Finalize row: set Status, log, email.
+ */
+function finalizeRow(profileSheet, state) {
+  const rowState = state.rowState;
+  const row = rowState.rowNumber;
+  const now = new Date();
+
+  let status = 'Completed';
+  let errorMessage = '';
+  if (rowState.errorMessage) {
+    status = 'Error';
+    errorMessage = rowState.errorMessage;
+  }
+
+  profileSheet.getRange(row, 7).setValue(status); // Status
+  profileSheet.getRange(row, 8).setValue(now);    // LastUpdatedOn
+
+  appendLog(profileSheet, row, {
+    status: status,
+    sourceName: rowState.sourceName,
+    startTimeIso: rowState.startTimeIso,
+    foldersCopied: rowState.foldersCopied,
+    filesCopied: rowState.filesCopied,
+    executionId: rowState.executionId,
+    errorMessage: errorMessage
+  });
+
+  sendNotificationEmail({
+    rowNumber: row,
+    sourceName: rowState.sourceName,
+    sourceId: rowState.sourceFolderId,
+    destName: rowState.destName,
+    destId: rowState.destFolderId,
+    copiedFolderName: rowState.copiedFolderName,
+    status: status,
+    foldersCopied: rowState.foldersCopied,
+    filesCopied: rowState.filesCopied,
+    executionId: rowState.executionId,
+    errorMessage: errorMessage
+  });
+
+  // Move controller pointer to next row
+  state.currentRow = row + 1;
+}
+
+/********************* LOGGING ***********************/
+/**
+ * Append a log entry in Log sheet.
+ */
+function appendLog(profileSheet, rowNumber, info) {
+  const ss = profileSheet.getParent();
+  let logSheet = ss.getSheetByName(GDFCM_CONFIG.LOG_SHEET_NAME);
+  if (!logSheet) {
+    logSheet = ss.insertSheet(GDFCM_CONFIG.LOG_SHEET_NAME);
+    // Create header if new
+    logSheet.getRange(1, 1, 1, 7).setValues([[
+      'Date',
+      'SourceFolderName',
+      'StartsAt',
+      'EndsAt',
+      'Details',
+      'RowNumber',
+      'ExecutionID'
+    ]]);
+  }
+
+  const date = new Date();
+  const sourceName = info.sourceName || '';
+  const startsAt = info.startTimeIso || '';
+  const endsAt = date.toISOString();
+  let details;
+  if (info.status === 'Completed') {
+    details = 'Completed – Folders: ' + info.foldersCopied +
+      ', Files: ' + info.filesCopied;
+  } else {
+    details =
+      'Error – ' + (info.errorMessage || 'Unknown error') +
+      ' – Folders: ' + info.foldersCopied +
+      ', Files: ' + info.filesCopied;
+  }
+
+  const values = [[
+    date,
+    sourceName,
+    startsAt,
+    endsAt,
+    details,
+    rowNumber,
+    info.executionId || ''
+  ]];
+
+  logSheet.appendRow(values[0]);
+}
+
+/********************* EMAIL NOTIFICATIONS ***********/
+/**
+ * Send email notification for a row completion.
+ */
+function sendNotificationEmail(info) {
+  const email = Session.getActiveUser().getEmail();
+  if (!email) {
+    Logger.log('Active user email not available; skipping notification.');
+    return;
+  }
+
+  const status = info.status;
+  const subject =
+    '[G Drive Copy] ' + status + ' – ' +
+    (info.sourceName || '') + ' → ' +
+    (info.copiedFolderName || '');
+
+  let body = '';
+  body += 'Google Drive Folder Copy Manager\n\n';
+  body += 'Status: ' + status + '\n';
+  body += 'Profile Row: ' + info.rowNumber + '\n\n';
+  body += 'Source Folder:\n';
+  body += '  Name: ' + (info.sourceName || '') + '\n';
+  body += '  ID: ' + (info.sourceId || '') + '\n\n';
+  body += 'Destination Parent Folder:\n';
+  body += '  Name: ' + (info.destName || '') + '\n';
+  body += '  ID: ' + (info.destId || '') + '\n\n';
+  body += 'Copied Folder Name: ' + (info.copiedFolderName || '') + '\n\n';
+  body += 'Folder Count (created/reused): ' + info.foldersCopied + '\n';
+  body += 'File Count (copied): ' + info.filesCopied + '\n\n';
+  if (info.errorMessage) {
+    body += 'Error Details: ' + info.errorMessage + '\n\n';
+  }
+  body += 'Execution ID: ' + (info.executionId || '') + '\n';
+
+  MailApp.sendEmail(email, subject, body);
+}
+
+/********************* TRIGGER UTILITIES *************/
+/**
+ * Delete existing resume triggers and create a new one.
+ */
+function scheduleResumeTrigger() {
+  deleteResumeTriggers();
+  ScriptApp.newTrigger(GDFCM_CONFIG.TRIGGER_FUNCTION_NAME)
+    .timeBased()
+    .after(1 * 60 * 1000) // resume after 1 minute
+    .create();
+}
+
+/**
+ * Delete all triggers for resumeCopyJob.
+ */
+function deleteResumeTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function (t) {
+    if (t.getHandlerFunction() === GDFCM_CONFIG.TRIGGER_FUNCTION_NAME) {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+}
+
+/**
+ * Clear state & delete triggers.
+ */
+function clearStateAndTriggers(scriptProps) {
+  scriptProps.deleteProperty(GDFCM_CONFIG.STATE_PROPERTY_KEY);
+  deleteResumeTriggers();
+}
