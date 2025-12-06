@@ -1,277 +1,326 @@
-# GdriveFolderCopy
-Automated Google Drive folder replication tool with recursive copy support, progress persistence, detailed logging, duplicate avoidance, and trigger-based resume for large directory trees.
+GDrive-FolderCopy V1.0 Overview
+===============================
 
-Google Drive Folder Copy Manager (GDFCM) &nbsp; 
-[Download Link](https://github.com/TechPoov/GdriveFolderCopy/releases/tag/V1.0)
-&nbsp; 
-<br>
-![GitHub all releases](https://img.shields.io/github/downloads/TechPoov/GdriveFolderCopy/total.svg)
+GDrive-FolderCopy is a reliable TechPoov utility that duplicates entire Google Drive folder structures---files, subfolders, and nested levels---into a destination folder without breaking hierarchy or creating messy duplicates. It intelligently recreates the folder tree, avoids re-copying items with identical names, and continues smoothly even when the source is very large.
 
-Efficient, resumable, and structured recursive folder copying inside Google Drive.
-Designed and developed by TechPoov.
+There is no installation required, no scripting expertise needed, and no special admin privileges involved. Simply configure your copy jobs in the Profile sheet, click Start Copy, and the tool handles everything automatically.
 
-1. Overview
+The copy process uses a checkpoint-and-resume engine that safely works within Google Apps Script's time limits. Even multi-GB folders with thousands of items are completed reliably over multiple controlled runs. Each job records its progress, updates status, and logs completion or errors with timestamps. Email notifications keep you informed without checking manually.
 
-The Google Drive Folder Copy Manager (GDFCM) is a Google Apps Script–powered automation tool that copies folder structures and their contents from one location in Google Drive to another.
+Whether you're reorganizing your Drive, preparing backups, creating sandbox environments, or duplicating department structures for new teams, GDrive-FolderCopy delivers a clean, predictable, auditable copy every time.
 
-It is built for users who need a reliable, resumable, and transparent folder copy process, especially when working with large or deeply nested directory trees.
+Google Drive Folder Copy Manager (GDFCM) &nbsp; 
 
-2. Key Features
+[Download Link](https://github.com/TechPoov/02_Gdrive-FolderCopy/releases/tag/V1.0)
+&nbsp; <br>
+![GitHub all releases](https://img.shields.io/github/downloads/TechPoov/02_Gdrive-FolderCopy/total.svg)
 
-Recursive Folder Copying
-Automatically copies entire folder hierarchies (subfolders + files).
+* * * * *
 
-Progress Persistence & Auto-Resume
-Uses triggers and state storage to resume long copy jobs safely.
+Features
+========
 
-Duplicate Avoidance
-Prevents accidental overwrites by skipping files already present in the destination.
+-   Multi-Profile Copy Engine\
+    Runs multiple folder-copy jobs in a single spreadsheet, each fully independent.
 
-Row-Based Job Management
-Supports multiple copy jobs via the Spreadsheet “Profile” sheet.
+-   Recursive Folder Copying\
+    Rebuilds the entire folder structure---root, subfolders, nested trees---preserving hierarchy exactly.
 
-Execution Logging
-Writes detailed logs for each completed or failed job.
+-   Duplicate-Safe File Transfer\
+    Files are copied only when a file with the same name does not already exist in the destination.
 
-Email Notifications
-Sends a summary email when each job finishes (Completed or Error).
+-   Automatic Folder Reuse\
+    If a matching folder name already exists in the destination, it is reused instead of recreated, preventing clutter.
 
-Graceful Timeout Handling
-Stops before Apps Script’s hard limit and resumes automatically.
+-   Checkpoint & Resume Execution\
+    Large copy operations automatically pause and resume using time-based triggers, ensuring completion even for massive folders.
 
-3. What This Tool Does Not Do (v1.0 Limitations)
+-   Browser-Independent Processing\
+    Copying continues safely in the background---even if the browser is closed, the network drops, or the computer shuts down.
 
-The following features are intentionally not implemented in v1.0:
+-   Live Status Tracking\
+    The Profiles sheet updates status as "Running", "Completed", or "Error", along with timestamps.
 
-Copying permissions or shared settings
+-   Error-Isolated Job Handling\
+    One failed row does not impact the rest of the queue; jobs continue cleanly.
 
-Timestamps preservation (Drive does not allow setting custom timestamps)
+-   Per-Job Email Notifications\
+    Receive an automatic email summarizing completion, counts, or errors, including execution ID for auditing.
 
-Syncing two folders
+-   Detailed Log Sheet\
+    Each job writes a timestamped log entry containing:\
+    Start time, end time, folder/file counts, execution ID, and error details (if any).
 
-Version comparison or delta copy
+-   No Installation or Admin Rights Needed\
+    Runs entirely inside Google Drive + Google Sheets using Apps Script.
 
-Hash-based file integrity validation (MD5/SHA)
+-   Lightweight, Predictable, and Admin-Friendly\
+    Perfect for Drive reorganizations, team onboarding, cloning templates, backups, and controlled test environments.
 
-Cross-account migration
+* * * * *
 
-UI-based front-end screens
+Who Needs This Tool & How They Use It
+=====================================
 
-Advanced deduplication logic
+1\. Users Who Need Clean, Safe Backups
+--------------------------------------
 
-Bulk Shared Drive processing
+Some users simply want a dependable duplicate of an important folder---personal archives, annual work documents, or data that must be preserved exactly.
 
-These may be considered in future releases.
+Use Cases:
 
-4. Architecture Summary
-4.1 Controller-Based Execution
+-   Creating a full backup before reorganizing a Drive or deleting content.
 
-The main driver (runController) orchestrates:
+-   Taking a year-end snapshot (e.g., "2024 Work") for long-term storage.
 
-Profile row selection
+-   Making a safeguard copy before cleaning or restructuring folders.
 
-State loading/saving
+-   Protecting shared folders from unwanted modifications or deletions.
 
-Time-sliced execution
+* * * * *
 
-Trigger scheduling
+2\. Template Builders & Structure Designers
+-------------------------------------------
 
-4.2 Queue-Driven Folder Copy
+For users who repeatedly create standardized folder layouts---projects, courses, onboarding materials, or client packages---this tool acts as a template replication engine.
 
-Each copy job uses a Breadth-First Search (BFS) queue:
+Use Cases:
 
-[
-  { srcId: <folderId>, destId: <folderId> },
-  ...
-]
+-   Cloning a master "Project Template" for every new assignment.
 
+-   Preparing course or training material for each new batch.
 
-This ensures stable recursion even for large folder trees.
+-   Creating consistent onboarding folders for new employees or volunteers.
 
-4.3 State Persistence
+-   Generating uniform client workspaces with identical subfolder structure.
 
-State is stored in ScriptProperties to survive:
+* * * * *
 
-Script timeouts
+3\. Operations Teams Requiring Repeatable Environments
+------------------------------------------------------
 
-Execution gaps
+Operations teams need consistent, error-free folder structures for scheduled cycles or coordinated projects. This tool rebuilds entire trees precisely every time.
 
-Trigger-based continuation
+Use Cases:
 
-4.4 Logging & Notifications
+-   Resetting department folders at the start of each month or quarter.
 
-All job completions or errors are written to a Log sheet and emailed to the active user.
+-   Preparing controlled staging workspaces for internal reviews or updates.
 
-5. Profile Sheet Configuration
+-   Providing new teams with identical working environments.
 
-Your spreadsheet must contain the following columns starting from Row 2:
+-   Producing sandbox copies for workflow or permission testing.
 
-Column	Field Name	Description
-A	Source_Folder_Name	For human reference only
-B	Source_Folder_ID	Folder ID to copy from
-C	Destination_Folder_Name	For reference
-D	Destination_Folder_ID	Parent folder where copied folder will be created
-E	Copied_Folder_Name	New folder name in the destination
-F	Copy (Yes/No)	“Yes” = Run this job
-G	Status	Auto-updated (Running / Completed / Error)
-H	LastUpdatedOn	Auto-updated timestamp
-6. How to Run the Tool
+* * * * *
 
-Open the Google Sheet containing the Profile sheet.
+4\. Backup, Archival & Business Continuity Teams
+------------------------------------------------
 
-Go to the top menu → Copy Gdrives
+Organizations that must preserve folder hierarchy and metadata benefit from the tool's duplicate-safe, non-destructive copying.
 
-Select Start Copy
+Use Cases:
 
-The tool will begin copying eligible rows (Copy = Yes).
+-   Creating compliance-ready archive copies for record retention.
 
-If the process exceeds the execution window, the tool will:
+-   Taking quarter-end or year-end snapshots for financial or legal storage.
 
-Save state
+-   Capturing folder structures during ownership, leadership, or security transitions.
 
-Schedule a trigger
+-   Building evidence-preserved trees for internal investigations or audits.
 
-Resume automatically after 1 minute
+* * * * *
 
-To view logs at any time, use:
-Copy Gdrives → View Logs
+5\. Migration, Reorganization & IT Transition Teams
+---------------------------------------------------
 
-7. Logging & Monitoring
+During migrations or structural reorganizations, teams need safe, accurate duplicates of folder environments before making changes.
 
-The Log sheet is auto-created with the following fields:
+Use Cases:
 
-Field	Description
-Date	When the job finished
-SourceFolderName	Name from Profile sheet
-StartsAt	Timestamp when job started
-EndsAt	Timestamp when job ended
-Details	Completed/Error + counts
-RowNumber	Profile sheet row number
-ExecutionID	Unique ID for traceability
+-   Duplicating structures into staging folders for migration testing.
 
-Each copy job produces a single log entry.
+-   Preparing pre-migration copies before transferring to OneDrive or SharePoint.
 
-8. Error Handling Behavior
-8.1 Configuration Errors
+-   Generating shadow copies to compare source vs. migrated content.
 
-Examples:
+-   Reorganizing large Drive areas by first cloning into clean layouts.
 
-Missing folder ID
+* * * * *
 
-Invalid folder ID
+6\. Creative Professionals, Agencies & Freelancers
+--------------------------------------------------
 
-Missing Copied_Folder_Name
+Creative work thrives on structure. This tool ensures every new client or project starts with the exact folder framework needed.
 
-These:
+Use Cases:
 
-Mark the row as Error
+-   Creating a fresh working folder for each new client or campaign.
 
-Write to the Log sheet
+-   Maintaining versioned folder sets for internal revisions.
 
-Send email
+-   Archiving completed client projects into clean, organized structures.
 
-Move on to the next row
+-   Preparing standardized pitch or presentation folders.
 
-8.2 Runtime Errors
+* * * * *
 
-If an error occurs during:
+7\. Power Users Managing Complex Folder Hierarchies
+---------------------------------------------------
 
-File copy
+Users who value precision and repeatability use this tool to automate copying without mistakes.
 
-Folder read
+Use Cases:
 
-Subfolder creation
+-   Maintaining parallel folder trees for A/B workflows.
 
-The entire job is marked Error and logged.
+-   Creating testing copies to explore new organizational structures.
 
-(Future versions will support per-file continuation.)
+-   Copying massive archives across multiple runs without timeout risk.
 
-9. Progress & Resume Logic
+-   Preserving execution logs for audit or documentation purposes.
 
-Execution window: 6 minutes
+* * * * *
 
-Safe margin: 1 minute
+8\. IT, Infrastructure & Workspace Administrators
+-------------------------------------------------
 
-If the script is about to time out:
+For administrators supporting large organizations, this tool simplifies rollout, migration, and environment management.
 
-State is saved
+Use Cases:
 
-A time-based trigger is created
+-   Rolling out standard folder frameworks across multiple teams.
 
-Work resumes after 1 minute
+-   Creating sandbox environments for permission or security testing.
 
-This allows completion of extremely large folder structures.
+-   Duplicating resource libraries for departments or business units.
 
-10. Folder Structure Preservation
+-   Maintaining versioned template repositories.
 
-The tool preserves:
+-   Validating Drive reorganizations using staging copies.
 
-Folder names
+* * * * *
 
-Subfolder hierarchy
+9\. Team Leads, Project Managers & Department Heads
+---------------------------------------------------
 
-File names
+Leaders use this tool to keep teams aligned with standardized structures throughout a project lifecycle.
 
-File MimeType
+Use Cases:
 
-File content
+-   Cloning project startup folders for new initiatives.
 
-Limitations:
-DriveApp does not allow assigning custom created or modified timestamps to new copies.
+-   Spinning up versioned workspaces for milestone phases.
 
-11. Performance Notes
+-   Maintaining parallel test spaces for experimentation.
 
-Uses BFS queue to minimize deep recursion overhead.
+-   Preparing onboarding-ready structures for new team members.
 
-Avoids unnecessary metadata reads.
+-   Archiving completed phases into structured, labeled copies.
 
-Performs duplicate avoidance via name-based checks.
+* * * * *
 
-May incur additional Drive API calls for getFilesByName and getFoldersByName, especially in large folders.
+10\. Compliance, Legal, Finance & Audit Departments
+---------------------------------------------------
 
-Future versions may include caching for optimization.
+Highly regulated teams value accurate, tamper-resistant duplication for recordkeeping and review.
 
-12. Security Notes
+Use Cases:
 
-Script can only access files/folders the active user has permission to access.
+-   Producing read-only snapshot copies for internal or external audits.
 
-No external networks or APIs are used.
+-   Duplicating sensitive folders for controlled legal or financial review.
 
-All operations stay within Google's ecosystem.
+-   Maintaining compliance-required backup structures.
 
-13. Planned for Future Releases
+-   Creating evidence-ready folder sets with preserved hierarchy.
 
-v1.1 Goals
+-   Storing time-stamped archives linked to each executed copy job.
 
-Continue copying after file-level errors
+* * * * *
 
-Basic integrity verification
+11\. Educators, Nonprofits, Freelancers & Students
+--------------------------------------------------
 
-Retry/backoff for rate limiting
+These users often reset workspaces regularly or require repeated folder structures across semesters, batches, or projects.
 
-Performance improvements (folder-level caching)
+Use Cases:
 
-v1.2 Goals
+-   Resetting course materials at the start of each semester.
 
-Metadata parity checking
+-   Generating identical working folders for each student or volunteer.
 
-Optional copy modes (Files Only, Folders Only)
+-   Duplicating resource packs for training or community programs.
 
-Per-item log entries
+-   Preparing structured portfolio copies for grants or submissions.
 
-Duplicate merge/reporting options
+-   Archiving yearly nonprofit projects while keeping originals intact.
 
-14. Version History
-v1.0 – Initial Public Release
+* * * * *
 
-Recursive folder copy
+Requirements
+============
 
-State persistence
+### A Valid Google Account
 
-Auto-resume triggers
+The tool runs entirely inside Google Drive + Google Sheets, so you must be signed in with a Google Account.
 
-Duplicate avoidance
+### Access to Both Source and Destination Folders
 
-Logging & email notifications
+You must have permission to:
 
-Multi-job processing via Profile sheet
+-   Read the source folder and its contents
+
+-   Create folders and files inside the destination folder
+
+Without these permissions, the copy job cannot proceed.
+
+### First-Time Script Authorization
+
+The first time you run the tool, Google will ask you to grant permission to access Drive.\
+Google may display the standard "unverified app" warning---this is normal for Apps Script tools that aren't published publicly.
+
+### An Active Internet Connection (only at the start)
+
+You only need to be online to trigger the first run.\
+After that, the copy engine continues via time-based triggers even if your browser or computer is offline.
+
+* * * * *
+
+Get Tool and Documents
+======================
+
+-   [Tool](https://docs.google.com/spreadsheets/d/1fVHxhQlCNSWalqE9CUgprPba4uBarCpNdC5XlMKR_VA/copy)
+
+-   [User Manual V1.0](https://docs.google.com/document/d/1PdNsuZ_GIPac5KTKAA4F6KEvlfco9pCQfAsLotnuu9A/copy)
+
+-   [Test Cases for reference](https://docs.google.com/spreadsheets/d/1nKbSnOrZPNFgR2kuCPCXXKIjS4Tm8pd8fgmh6u2J1Ew/copy)
+
+Version History
+===============
+
+V1.0 --- 01- Dec - 2025   Initial release
+
+* * * * *
+
+License
+=======
+
+This project is released under the MIT License, a widely used open-source license that allows personal, commercial, and organizational use with minimal restrictions. Users are free to use, modify, distribute, and incorporate the code into their own projects, provided that the original copyright notice and license terms are included in all copies or substantial portions of the software.
+
+* * * * *
+
+Support
+=======
+
+If you need help, have questions, or want to share feedback, support is always available.
+
+🌐 Online Documents:\
+Visit the official TechPoov documentation at https://techpoov.github.io
+
+📧 Email Support:\
+techpoov+GDrive-FolderCopy@gmail.com
+
+🐞 Report Issues on GitHub:\
+Submit bugs, feature requests, or enhancement ideas here:\
+https://github.com/TechPoov/GDrive-FolderCopy/issues
+
