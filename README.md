@@ -12,8 +12,7 @@ Whether you're reorganizing your Drive, preparing backups, creating sandbox envi
 Google Drive Folder Copy Manager (GDFCM) &nbsp; 
 
 [Download Link](https://github.com/TechPoov/02_Gdrive-FolderCopy/releases/tag/V1.0)
-&nbsp; <br>
-![GitHub all releases](https://img.shields.io/github/downloads/TechPoov/02_Gdrive-FolderCopy/total.svg)
+&nbsp; ![GitHub all releases](https://img.shields.io/github/downloads/TechPoov/02_Gdrive-FolderCopy/total.svg)
 
 * * * * *
 
